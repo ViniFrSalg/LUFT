@@ -1,10 +1,162 @@
 #include <Arduino.h>
+#include <Wire.h>
+#include "bsec2.h"
+
+// Change these if your wiring is different
+#define I2C_SDA 12
+#define I2C_SCL 11
+
+// Most BME680 boards are 0x76 or 0x77.
+// Bosch's example uses the low address constant.
+#define BME68X_I2C_ADDR_LOW 0x76
+
+// BSEC sample rate: LP is a good starting point for most projects.
+#define SAMPLE_RATE BSEC_SAMPLE_RATE_LP
+
+// Optional: adjust this later if your temperature reads high/low.
+#define TEMP_OFFSET 0.0f
+
+Bsec2 envSensor;
+
+void checkBsecStatus(Bsec2 bsec);
+void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec);
 
 void setup() {
-   Serial.begin(115200);
+  Serial.begin(115200);
+  delay(500);
+
+  Wire.begin(I2C_SDA, I2C_SCL);
+
+  Serial.println("ESP32-S3 + BME680 + Bosch BSEC2");
+
+  // Start sensor + BSEC
+  if (!envSensor.begin(BME68X_I2C_ADDR_LOW, Wire)) {
+    checkBsecStatus(envSensor);
+  }
+
+  // Temperature compensation (Bosch example uses this pattern)
+  envSensor.setTemperatureOffset(TEMP_OFFSET);
+
+  // Request the outputs you want
+  bsecSensor sensorList[] = {
+    BSEC_OUTPUT_IAQ,
+    BSEC_OUTPUT_RAW_TEMPERATURE,
+    BSEC_OUTPUT_RAW_PRESSURE,
+    BSEC_OUTPUT_RAW_HUMIDITY,
+    BSEC_OUTPUT_RAW_GAS,
+    BSEC_OUTPUT_STABILIZATION_STATUS,
+    BSEC_OUTPUT_RUN_IN_STATUS,
+    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
+    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
+    BSEC_OUTPUT_STATIC_IAQ,
+    BSEC_OUTPUT_CO2_EQUIVALENT,
+    BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
+    BSEC_OUTPUT_GAS_PERCENTAGE,
+    BSEC_OUTPUT_COMPENSATED_GAS
+  };
+
+  if (!envSensor.updateSubscription(sensorList, ARRAY_LEN(sensorList), SAMPLE_RATE)) {
+    checkBsecStatus(envSensor);
+  }
+
+  envSensor.attachCallback(newDataCallback);
+
+  Serial.println("BSEC library version "
+                 + String(envSensor.version.major) + "."
+                 + String(envSensor.version.minor) + "."
+                 + String(envSensor.version.major_bugfix) + "."
+                 + String(envSensor.version.minor_bugfix));
 }
 
 void loop() {
-   Serial.println("Oi");
+  if (!envSensor.run()) {
+    checkBsecStatus(envSensor);
+  }
 }
 
+void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec) {
+  if (!outputs.nOutputs) return;
+
+  Serial.println("\nBSEC outputs:");
+  Serial.println("Time stamp = " + String((int)(outputs.output[0].time_stamp / INT64_C(1000000))));
+
+  for (uint8_t i = 0; i < outputs.nOutputs; i++) {
+    const bsecData output = outputs.output[i];
+
+    switch (output.sensor_id) {
+      case BSEC_OUTPUT_IAQ:
+        Serial.println("IAQ = " + String(output.signal));
+        Serial.println("IAQ accuracy = " + String((int)output.accuracy));
+        break;
+
+      case BSEC_OUTPUT_RAW_TEMPERATURE:
+        Serial.println("Temperature = " + String(output.signal) + " C");
+        break;
+
+      case BSEC_OUTPUT_RAW_PRESSURE:
+        Serial.println("Pressure = " + String(output.signal / 100.0f) + " hPa");
+        break;
+
+      case BSEC_OUTPUT_RAW_HUMIDITY:
+        Serial.println("Humidity = " + String(output.signal) + " %");
+        break;
+
+      case BSEC_OUTPUT_RAW_GAS:
+        Serial.println("Gas resistance = " + String(output.signal / 1000.0f) + " KOhms");
+        break;
+
+      case BSEC_OUTPUT_STABILIZATION_STATUS:
+        Serial.println("Stabilization status = " + String(output.signal));
+        break;
+
+      case BSEC_OUTPUT_RUN_IN_STATUS:
+        Serial.println("Run-in status = " + String(output.signal));
+        break;
+
+      case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
+        Serial.println("Compensated temperature = " + String(output.signal) + " C");
+        break;
+
+      case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
+        Serial.println("Compensated humidity = " + String(output.signal) + " %");
+        break;
+
+      case BSEC_OUTPUT_STATIC_IAQ:
+        Serial.println("Static IAQ = " + String(output.signal));
+        break;
+
+      case BSEC_OUTPUT_CO2_EQUIVALENT:
+        Serial.println("CO2 equivalent = " + String(output.signal) + " ppm");
+        break;
+
+      case BSEC_OUTPUT_BREATH_VOC_EQUIVALENT:
+        Serial.println("bVOC equivalent = " + String(output.signal) + " ppm");
+        break;
+
+      case BSEC_OUTPUT_GAS_PERCENTAGE:
+        Serial.println("Gas percentage = " + String(output.signal));
+        break;
+
+      case BSEC_OUTPUT_COMPENSATED_GAS:
+        Serial.println("Compensated gas = " + String(output.signal));
+        break;
+
+      default:
+        break;
+    }
+  }
+}
+
+void checkBsecStatus(Bsec2 bsec) {
+  if (bsec.status < BSEC_OK) {
+    Serial.println("BSEC error code: " + String(bsec.status));
+  } else if (bsec.status > BSEC_OK) {
+    Serial.println("BSEC warning code: " + String(bsec.status));
+  }
+
+  if (bsec.sensor.status < BME68X_OK) {
+    Serial.println("BME68X error code: " + String(bsec.sensor.status));
+  } else if (bsec.sensor.status > BME68X_OK) {
+    Serial.println("BME68X warning code: " + String(bsec.sensor.status));
+  }
+}
