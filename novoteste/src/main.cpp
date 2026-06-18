@@ -24,6 +24,13 @@ const char* WIFI_PASSWORD = nullptr;
 WebServer server(80);
 Bsec2 envSensor;
 
+// Nextion display serial connection. Adjust pins as needed for your hardware.
+#define NEXTION_RX 44
+#define NEXTION_TX 43
+#define NEXTION_BAUD 9600
+HardwareSerial nextionSerial(2);
+uint8_t currentNextionPage = 255;
+
 float latestCO2 = 0.0f;
 float latestBVOC = 0.0f;
 float latestPM = 0.0f;
@@ -32,6 +39,8 @@ void checkBsecStatus(Bsec2 bsec);
 void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec);
 void handleRoot();
 void handleData();
+void updateNextionPage();
+void nextionSetPage(uint8_t page);
 
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!doctype html>
@@ -163,13 +172,14 @@ void setup() {
 
   envSensor.attachCallback(newDataCallback);
 
+  nextionSerial.begin(NEXTION_BAUD, SERIAL_8N1, NEXTION_RX, NEXTION_TX);
+  nextionSetPage(1); // default to moderate page until data is available
+
   Serial.println("BSEC library version "
                  + String(envSensor.version.major) + "."
                  + String(envSensor.version.minor) + "."
                  + String(envSensor.version.major_bugfix) + "."
                  + String(envSensor.version.minor_bugfix));
-   
-   
 }
 
 void loop() {
@@ -190,6 +200,7 @@ void loop() {
   dustDensity = 170 * calcVoltage - 0.1;
   latestPM = dustDensity;
 
+  updateNextionPage();
   delay(1000);
 }
 
@@ -280,6 +291,39 @@ void handleData() {
   response += "\"pm\":" + String(latestPM, 1);
   response += "}";
   server.send(200, "application/json", response);
+}
+
+void nextionSetPage(uint8_t page) {
+  if (page == currentNextionPage) return;
+  currentNextionPage = page;
+  nextionSerial.print("page ");
+  nextionSerial.print(page);
+  nextionSerial.write(0xFF);
+  nextionSerial.write(0xFF);
+  nextionSerial.write(0xFF);
+}
+
+void updateNextionPage() {
+  // Air quality thresholds: adjust as needed for your application.
+  const float goodCO2 = 1000.0f;
+  const float badBVOC = 1.0f;
+  const float badCO2 = 2000.0f;
+  const float goodBVOC = 0.5f;
+  const float goodPM = 500.0f;
+  const float badPM = 1000.0f;
+
+  //bool bad = latestCO2 >= badCO2 || latestBVOC >= badBVOC || latestPM >= badPM;
+  bool bad = 0;
+  bool moderate = 0;
+  //bool moderate = latestCO2 >= goodCO2 || latestBVOC >= goodBVOC || latestPM >= goodPM;
+
+  if (bad) {
+    nextionSetPage(0);
+  } else if (moderate) {
+    nextionSetPage(1);
+  } else {
+    nextionSetPage(2);
+  }
 }
 
 void checkBsecStatus(Bsec2 bsec) {
