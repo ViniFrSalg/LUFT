@@ -1,6 +1,6 @@
 # LUFT
 
-LUFT is an ESP32-S3 air-quality monitoring prototype created by Vinícius Ferreira. It reads environmental sensors, exposes the latest measurements through a JSON endpoint, and hosts two responsive web pages directly from the ESP32:
+LUFT is an ESP32-S3 air-quality monitoring prototype created by Vinícius Ferreira and Sophia Lopes. It reads environmental sensors, exposes the latest measurements through a JSON endpoint, and hosts two responsive web pages directly from the ESP32:
 
 - a live dashboard for the current readings; and
 - an educational page about air pollution, health, and practical ways to reduce exposure.
