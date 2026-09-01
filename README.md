@@ -26,15 +26,27 @@ Further information:
 ## How it works
 
 ```text
-BME680 ──> Bosch BSEC2 ──> eCO₂ and breath-VOC estimates ──┐
-                                                            ├──> ESP32 web server ──> browser
-Optical dust sensor ──> analog sampling ──> particle value ─┘           │
-                                                                        └──> JSON /data
+BME680 ──> Bosch BSEC2 ──> eCO₂ and breath-VOC estimates ──> moving mean ──┐
+                                                                           ├──> ESP32 web server ──> browser
+Optical dust sensor ──> analog sampling ──> particle value ──> moving mean ─┘           │
+                                                                                       └──> JSON /data
 
 Latest readings ──> prototype air-quality logic ──> Nextion display
 ```
 
 The web pages and stylesheet are stored in program memory and compiled into the firmware. No separate filesystem upload is required.
+
+## Moving-mean filter
+
+The values published through `/data` and used by the Nextion status logic are smoothed with independent moving means for eCO₂, bVOC, and particles. All three filters use the same configurable window size.
+
+The default is five samples. To change it, edit this single constant in [`main.cpp`](firmware/src/main.cpp):
+
+```cpp
+constexpr size_t MOVING_MEAN_WINDOW_SIZE = 5;
+```
+
+Each filter uses only the samples received for its own sensor. During startup, before five samples are available, the mean is calculated from the samples collected so far rather than filling the window with zeroes. The reusable [`MovingMean`](firmware/include/moving_mean.h) class uses a fixed-size ring buffer and performs no dynamic memory allocation.
 
 ## Hardware
 
@@ -101,10 +113,10 @@ PlatformIO downloads the sensor libraries declared in [`platformio.ini`](firmwar
 ```text
 LUFT/
 ├── .gitignore
-├── LICENSE
 ├── README.md
 └── firmware/
     ├── include/
+    │   ├── moving_mean.h   # Reusable fixed-size moving-mean filter
     │   └── web_pages.h     # Dashboard, educational page, and CSS
     ├── src/
     │   └── main.cpp        # Sensors, Wi-Fi, routes, dashboard, and Nextion logic
@@ -127,7 +139,3 @@ LUFT is an educational prototype, not a certified environmental or medical instr
 **Sophia Lopes helped Vinícius Ferreira develop this project.** The educational page's `/sophia` route and related code identifiers use her name in recognition of that contribution; `sophia` is not a separate product or software dependency.
 
 LUFT was inspired by the Desafio Liga Jovem goal of helping students use technology, entrepreneurship, and creativity to improve their communities.
-
-## License
-
-The project is available under the [MIT License](LICENSE).

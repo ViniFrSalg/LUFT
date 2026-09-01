@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include "bsec2.h"
+#include "moving_mean.h"
 #include "web_pages.h"
 
 // Change these if your wiring is different
@@ -18,6 +19,9 @@
 
 // Optional: adjust this later if your temperature reads high/low.
 #define TEMP_OFFSET 0.0f
+
+// Change this one value to configure every sensor's moving-mean window.
+constexpr size_t MOVING_MEAN_WINDOW_SIZE = 5;
 
 const char* WIFI_SSID = "LUFT-AP";
 const char* WIFI_PASSWORD = nullptr;
@@ -35,6 +39,9 @@ uint8_t currentNextionPage = 255;
 float latestCO2 = 0.0f;
 float latestBVOC = 0.0f;
 float latestPM = 0.0f;
+MovingMean<float, MOVING_MEAN_WINDOW_SIZE> co2MovingMean;
+MovingMean<float, MOVING_MEAN_WINDOW_SIZE> bvocMovingMean;
+MovingMean<float, MOVING_MEAN_WINDOW_SIZE> pmMovingMean;
 
 void checkBsecStatus(Bsec2 bsec);
 void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec);
@@ -140,7 +147,7 @@ void loop() {
 
   calcVoltage = voMeasured * (5.0 / 1024.0);
   dustDensity = 170 * calcVoltage - 0.1;
-  latestPM = dustDensity;
+  latestPM = pmMovingMean.add(dustDensity);
 
   updateNextionPage();
   delay(1000);
@@ -199,13 +206,15 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
         break;
 
       case BSEC_OUTPUT_CO2_EQUIVALENT:
-        latestCO2 = output.signal;
-        Serial.println("CO2 equivalent = " + String(output.signal) + " ppm");
+        latestCO2 = co2MovingMean.add(output.signal);
+        Serial.println("CO2 equivalent (raw) = " + String(output.signal) + " ppm");
+        Serial.println("CO2 equivalent (moving mean) = " + String(latestCO2) + " ppm");
         break;
 
       case BSEC_OUTPUT_BREATH_VOC_EQUIVALENT:
-        latestBVOC = output.signal;
-        Serial.println("bVOC equivalent = " + String(output.signal) + " ppm");
+        latestBVOC = bvocMovingMean.add(output.signal);
+        Serial.println("bVOC equivalent (raw) = " + String(output.signal) + " ppm");
+        Serial.println("bVOC equivalent (moving mean) = " + String(latestBVOC) + " ppm");
         break;
 
       case BSEC_OUTPUT_GAS_PERCENTAGE:
@@ -262,10 +271,8 @@ void updateNextionPage() {
   const float goodPM = 500.0f;
   const float badPM = 1000.0f;
 
-  //bool bad = latestCO2 >= badCO2 || latestBVOC >= badBVOC || latestPM >= badPM;
-  bool bad = 0;
-  bool moderate = 0;
-  //bool moderate = latestCO2 >= goodCO2 || latestBVOC >= goodBVOC || latestPM >= goodPM;
+  bool bad = latestCO2 >= badCO2 || latestBVOC >= badBVOC || latestPM >= badPM;
+  bool moderate = latestCO2 >= goodCO2 || latestBVOC >= goodBVOC || latestPM >= goodPM;
 
   if (bad) {
     nextionSetPage(0);
