@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include "bsec2.h"
+#include "web_pages.h"
 
 // Change these if your wiring is different
 #define I2C_SDA 12
@@ -38,80 +39,17 @@ float latestPM = 0.0f;
 void checkBsecStatus(Bsec2 bsec);
 void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec);
 void handleRoot();
+void handleSophia();
+void handleSophiaStyles();
 void handleData();
 void updateNextionPage();
 void nextionSetPage(uint8_t page);
-
-const char INDEX_HTML[] PROGMEM = R"rawliteral(
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LUFT Live Data</title>
-  <style>
-    body { margin: 0; font-family: Arial, sans-serif; background: linear-gradient(180deg, #e9f7ff, #f6fcff); color: #1f3a60; }
-    .page { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
-    .hero { background: #d9efff; border-radius: 20px; padding: 2rem; box-shadow: 0 16px 35px rgba(94, 160, 230, 0.16); }
-    .hero h1 { margin: 0 0 0.5rem; font-size: 2.4rem; }
-    .hero p { margin: 0; color: #3d5a7a; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
-    .card { background: white; border-radius: 18px; padding: 1.4rem; border: 1px solid rgba(94, 200, 255, 0.4); box-shadow: 0 10px 22px rgba(94, 200, 255, 0.12); }
-    .card h2 { margin: 0 0 0.75rem; color: #1a4f7a; }
-    .card p { margin: 0; font-size: 1.3rem; line-height: 1.5; }
-    .status { margin-top: 1.5rem; color: #3d5a7a; font-size: 0.96rem; }
-    .footer { margin-top: 2rem; text-align: center; color: #6d7c96; font-size: 0.95rem; }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <section class="hero">
-      <h1>LUFT Live Sensor Data</h1>
-      <p>Current air quality readings from the ESP32-S3: CO₂, bVOC, and particles from the optical sensor.</p>
-    </section>
-    <div class="cards">
-      <div class="card">
-        <h2>CO₂</h2>
-        <p id="co2">Loading...</p>
-      </div>
-      <div class="card">
-        <h2>bVOC</h2>
-        <p id="bvoc">Loading...</p>
-      </div>
-      <div class="card">
-        <h2>Particles</h2>
-        <p id="pm">Loading...</p>
-      </div>
-    </div>
-    <div class="status">Data refreshes every 2 seconds. If you see dashes, the sensor is still warming up.</div>
-    <div class="footer">ESP32-S3 web server is serving this page from your local network.</div>
-  </div>
-  <script>
-    async function updateData() {
-      try {
-        const res = await fetch('/data');
-        if (!res.ok) return;
-        const json = await res.json();
-        document.getElementById('co2').textContent = json.co2.toFixed(1) + ' ppm';
-        document.getElementById('bvoc').textContent = json.bvoc.toFixed(2) + ' ppm';
-        document.getElementById('pm').textContent = json.pm.toFixed(1) + ' µg/m³';
-      } catch (err) {
-        console.error(err);
-      }
-    }
-    setInterval(updateData, 2000);
-    updateData();
-  </script>
-</body>
-</html>
-)rawliteral";
-
 
 //parte do sensor optico
 const int measurePin = 5; //Connect dust sensor to Arduino A0 pin MUDAR PINO
 const int ledPower = 6;   //Connect 3 led driver pins of dust sensor to Arduino D2  MUDAR PINO
 int samplingTime = 280; // time required to sample signal coming out   of the sensor
-int deltaTime = 40; 
+int deltaTime = 40;
 int sleepTime = 9680;
 float voMeasured = 0;
 float calcVoltage = 0;
@@ -136,8 +74,12 @@ void setup() {
   Serial.print("AP IP address: ");
   Serial.println(apIP);
 
-  server.on("/", handleRoot);
-  server.on("/data", handleData);
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/sophia", HTTP_GET, handleSophia);
+  server.on("/sophia/", HTTP_GET, handleSophia);
+  server.on("/sophia/index.html", HTTP_GET, handleSophia);
+  server.on("/sophia/styles.css", HTTP_GET, handleSophiaStyles);
+  server.on("/data", HTTP_GET, handleData);
   server.begin();
 
   // Start sensor + BSEC
@@ -281,7 +223,15 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
 }
 
 void handleRoot() {
-  server.send_P(200, "text/html", INDEX_HTML);
+  server.send_P(200, "text/html; charset=utf-8", DASHBOARD_HTML);
+}
+
+void handleSophia() {
+  server.send_P(200, "text/html; charset=utf-8", SOPHIA_INDEX_HTML);
+}
+
+void handleSophiaStyles() {
+  server.send_P(200, "text/css; charset=utf-8", SOPHIA_STYLES_CSS);
 }
 
 void handleData() {
